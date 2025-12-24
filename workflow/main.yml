@@ -1,92 +1,73 @@
-name: MLflow CI - Retrain & Publish
+name: CI/CD MLflow
 
 on:
   push:
-    branches: [ "main", "master" ]
-  workflow_dispatch:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
 
 env:
-  # Set an image name prefix; can be overriden via workflow inputs or secrets
-  IMAGE_NAME: workflow-ci-model
+  CSV_URL: "MLproject/train_pca.csv"
+  TARGET_VAR: "Credit_Score"
 
 jobs:
-  train:
-    name: Run MLflow Project (retrain)
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
 
-      - name: Set up Python
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE
+      - uses: actions/checkout@v3
+
+      # Setup Python 3.12.7
+      - name: Set up Python 3.12.7
         uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
-
-      - name: Install runtime deps (for mlflow run --no-conda)
+          python-version: "3.12.7"
+      
+      # Check Env Variables
+      - name: Check Env
         run: |
-          python -m pip install --upgrade pip
-          pip install mlflow scikit-learn pandas numpy joblib
+          echo $CSV_URL
 
-      - name: Run MLflow Project (no-conda)
-        # We call the MLProject entry point. Use --no-conda in CI to avoid conda setup.
-        run: |
-          mlflow --version
-          mlflow run MLProject -e main -P data_path="MLProject/namadataset_preprocessing/dataset.csv" -P output="artifacts/model" --no-conda
-
-      - name: List artifacts folder
-        run: |
-          echo "Contents of artifacts/:"
-          ls -la artifacts || true
-          echo "Contents of artifacts/model:"
-          ls -la artifacts/model || true
-
-      - name: Upload model artifact (GitHub Actions artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: model-artifact
-          path: artifacts/model
-
-  build-and-push-docker:
-    name: Build Docker image from MLflow model and push to Docker Hub (optional)
-    runs-on: ubuntu-latest
-    needs: train
-    if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      IMAGE_NAME: ${{ env.IMAGE_NAME }}
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Install mlflow
+      # Install mlflow
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install mlflow
 
-      - name: Build Docker image from saved MLflow model
+      # Run as a mlflow project
+      - name: Run mlflow project
         run: |
-          # mlflow models build-docker requires a model directory with MLmodel file.
-          # We saved model in artifacts/model during training step.
-          MODEL_DIR="artifacts/model"
-          IMAGE_TAG="${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-          if [ ! -d "$MODEL_DIR" ]; then
-            echo "$MODEL_DIR not found. Ensure training job wrote model to artifacts/model"
-            exit 1
-          fi
-          mlflow models build-docker -m "$MODEL_DIR" -n "${IMAGE_TAG}"
-          echo "Built image ${IMAGE_TAG}"
+          mlflow run MLproject --env-manager=local 
+      
+      # Get latest run_id
+      - name: Get latest MLflow run_id
+        run: |
+          RUN_ID=$(ls -td mlruns/0/*/ | head -n 1 | cut -d'/' -f3)
+          echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
+          echo "Latest run_id: $RUN_ID"
+          
+      # Build Docker Model
+      - name: Build Docker Model
+        run: |
+          mlflow models build-docker --model-uri "runs:/$RUN_ID/model" --name "cc"
 
-      - name: Push Docker image
+      # Login to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      # Tag the Docker image
+      - name: Tag Docker Image
         run: |
-          IMAGE_TAG="${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
-          docker push "${IMAGE_TAG}"
+          docker tag cc ${{ secrets.DOCKER_HUB_USERNAME }}/cc:latest
+
+      # Push Docker image to Docker Hub
+      - name: Push Docker Image
+        run: |
+          docker push ${{ secrets.DOCKER_HUB_USERNAME }}/cc:latest
+
