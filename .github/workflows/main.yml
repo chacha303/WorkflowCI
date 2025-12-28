@@ -50,11 +50,6 @@ jobs:
     name: Build Docker image from MLflow model and push to Docker Hub (optional)
     runs-on: ubuntu-latest
     needs: train
-    # Map secrets into job env (allowed). Do not use secrets in job-level `if:`.
-    env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      # IMAGE_NAME is inherited from top-level env
 
     steps:
       - name: Checkout repo
@@ -82,7 +77,7 @@ jobs:
         run: |
           # mlflow models build-docker requires a model directory with MLmodel file.
           MODEL_DIR="artifacts/model"
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
           if [ ! -d "$MODEL_DIR" ]; then
             echo "$MODEL_DIR not found. Ensure training job wrote model to artifacts/model"
             exit 1
@@ -93,5 +88,5 @@ jobs:
       - name: Push Docker image
         if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         run: |
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
           docker push "${IMAGE_TAG}"
