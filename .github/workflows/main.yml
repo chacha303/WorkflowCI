@@ -78,7 +78,7 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           MODEL_DIR="artifacts/model"
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
           if [ ! -d "$MODEL_DIR" ]; then
             echo "$MODEL_DIR not found. Ensure training job wrote model to artifacts/model"
             exit 1
@@ -91,5 +91,5 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
+          IMAGE_TAG="${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest"
           docker push "${IMAGE_TAG}"
