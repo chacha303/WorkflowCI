@@ -50,35 +50,39 @@ jobs:
     name: Build Docker image from MLflow model and push to Docker Hub (optional)
     runs-on: ubuntu-latest
     needs: train
-    if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
+    # Map secrets into job env (allowed). Do not use secrets in job-level `if:`.
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      IMAGE_NAME: ${{ env.IMAGE_NAME }}
+      # IMAGE_NAME is inherited from top-level env
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         uses: docker/setup-buildx-action@v2
 
       - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         uses: docker/login-action@v2
         with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Install mlflow
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         run: |
           python -m pip install --upgrade pip
           pip install mlflow
 
       - name: Build Docker image from saved MLflow model
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         run: |
           # mlflow models build-docker requires a model directory with MLmodel file.
-          # We saved model in artifacts/model during training step.
           MODEL_DIR="artifacts/model"
-          IMAGE_TAG="${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
           if [ ! -d "$MODEL_DIR" ]; then
             echo "$MODEL_DIR not found. Ensure training job wrote model to artifacts/model"
             exit 1
@@ -87,6 +91,7 @@ jobs:
           echo "Built image ${IMAGE_TAG}"
 
       - name: Push Docker image
+        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
         run: |
-          IMAGE_TAG="${{ env.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest"
+          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
           docker push "${IMAGE_TAG}"
