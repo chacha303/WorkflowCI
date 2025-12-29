@@ -1,95 +1,110 @@
-name: MLflow CI - Retrain & Publish
-
+# CI: run MLflow project, collect artifacts of latest run, upload to GitHub Actions artifacts
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
-env:
-  # Set an image name prefix; can be overriden via workflow inputs or secrets
-  IMAGE_NAME: workflow-ci-model
+name: CI - MLflow -> Upload Artifact
 
 jobs:
-  train:
-    name: Run MLflow Project (retrain)
+  mlflow-and-artifact:
     runs-on: ubuntu-latest
+    env:
+      # optional: set these in Secrets if you use remote MLflow tracking server
+      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }} # optional: id or name
     steps:
-      - name: Checkout repo
+      - name: Set up job
+        run: echo "Start CI job for WorkflowCI"
+
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Miniconda and create environment from MLProject/conda.yaml
+        uses: conda-incubator/setup-miniconda@v2
         with:
-          python-version: "3.8"
+          auto-update-conda: true
+          python-version: "3.12"
+          environment-file: MLProject/conda.yaml
+          activate-environment: workflowci-env
+          use-mamba: true
 
-      - name: Install runtime deps (for mlflow run --no-conda)
+      - name: Ensure MLflow CLI available in env
         run: |
-          python -m pip install --upgrade pip
-          pip install mlflow scikit-learn pandas numpy joblib
+          conda run -n workflowci-env python -m pip install --upgrade pip
+          conda run -n workflowci-env python -m pip install mlflow
+        shell: bash
 
-      - name: Run MLflow Project (no-conda)
-        # We call the MLProject entry point. Use --no-conda in CI to avoid conda setup.
+      - name: Run MLflow project (MLProject directory)
+        id: run_mlflow
         run: |
-          mlflow --version
-          mlflow run MLProject -e main -P data_path="MLProject/namadataset_preprocessing/dataset.csv" -P output="artifacts/model" --no-conda
+          # jika MLProject/MLproject ada, ini akan menjalankan default entry point
+          conda run -n workflowci-env mlflow run MLProject
+        shell: bash
 
-      - name: List artifacts folder
+      - name: Get latest MLflow run_id (inline, writes to GITHUB_OUTPUT)
+        id: get_run
         run: |
-          echo "Contents of artifacts/:"
-          ls -la artifacts || true
-          echo "Contents of artifacts/model:"
-          ls -la artifacts/model || true
+          conda run -n workflowci-env python - <<'PY'
+          import os, sys
+          from mlflow.tracking import MlflowClient
+          tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+          client = MlflowClient(tracking_uri=tracking_uri) if tracking_uri else MlflowClient()
+          exp = os.environ.get("MLFLOW_EXPERIMENT", "0")
+          try:
+              runs = client.search_runs([exp], order_by=["attributes.start_time DESC"], max_results=1)
+          except Exception as e:
+              print("Error searching runs:", e, file=sys.stderr)
+              sys.exit(1)
+          if not runs:
+              print("No runs found for experiment:", exp, file=sys.stderr)
+              sys.exit(2)
+          run_id = runs[0].info.run_id
+          print("Found run_id:", run_id)
+          gh_out = os.environ.get("GITHUB_OUTPUT")
+          if gh_out:
+              with open(gh_out, "a") as fh:
+                  fh.write(f"mlflow_run_id={run_id}\n")
+          else:
+              # fallback (shouldn't be needed on Actions)
+              print(f"mlflow_run_id={run_id}")
+          PY
+        shell: bash
 
-      - name: Upload model artifact (GitHub Actions artifact)
+      - name: Download artifacts for latest run into out/
+        id: download_artifacts
+        run: |
+          set -e
+          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
+          echo "Downloading artifacts for run_id: $RUN_ID"
+          OUT_DIR="out/run_${RUN_ID}"
+          # remove if exists
+          rm -rf "$OUT_DIR"
+          mkdir -p "$OUT_DIR"
+          conda run -n workflowci-env python - <<PY
+          import os, sys, shutil
+          from mlflow.tracking import MlflowClient
+          run_id = os.environ.get("RUN_ID")
+          client = MlflowClient()
+          # download all artifacts of the run (pass path "" to get root)
+          client.download_artifacts(run_id, "", dst_path=os.environ.get("OUT_DIR"))
+          print("Downloaded artifacts to", os.environ.get("OUT_DIR"))
+          PY
+        env:
+          RUN_ID: ${{ steps.get_run.outputs.mlflow_run_id }}
+          OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
+        shell: bash
+
+      - name: List downloaded artifacts (debug)
+        run: |
+          echo "Contents of out/:"
+          ls -R out || true
+
+      - name: Upload model/artifacts to GitHub Actions (upload-artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: model-artifact
-          path: artifacts/model
+          name: mlflow-run-${{ steps.get_run.outputs.mlflow_run_id }}
+          path: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
 
-  build-and-push-docker:
-    name: Build Docker image from MLflow model and push to Docker Hub (optional)
-    runs-on: ubuntu-latest
-    needs: train
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-        uses: docker/setup-buildx-action@v2
-
-      - name: Login to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Install mlflow
-        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-        run: |
-          python -m pip install --upgrade pip
-          pip install mlflow
-
-      - name: Build Docker image from saved MLflow model
-        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          MODEL_DIR="artifacts/model"
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
-          if [ ! -d "$MODEL_DIR" ]; then
-            echo "$MODEL_DIR not found. Ensure training job wrote model to artifacts/model"
-            exit 1
-          fi
-          mlflow models build-docker -m "$MODEL_DIR" -n "${IMAGE_TAG}"
-          echo "Built image ${IMAGE_TAG}"
-
-      - name: Push Docker image
-        if: ${{ secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN }}
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-        run: |
-          IMAGE_TAG="${DOCKERHUB_USERNAME}/${IMAGE_NAME}:latest"
-          docker push "${IMAGE_TAG}"
+      - name: Complete job
+        run: echo "CI job finished successfully"
