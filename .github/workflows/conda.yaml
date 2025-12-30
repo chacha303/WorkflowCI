@@ -20,32 +20,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show MLProject/conda.yaml (debug)
+        run: |
+          echo "=== MLProject/conda.yaml ==="
+          sed -n '1,200p' MLProject/conda.yaml || true
+
       - name: Set up Miniconda and create environment from MLProject/conda.yaml
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
-          python-version: "3.12"
+          # Cocokkan versi Python dengan conda.yaml yang memakai python=3.8
+          python-version: "3.8"
           environment-file: MLProject/conda.yaml
-          activate-environment: workflowci-env
-          use-mamba: true
+          # Aktifkan environment sesuai nama di conda.yaml (mlflow-env)
+          activate-environment: mlflow-env
+          # gunakan conda solver untuk debugging; jika mau, ubah ke true untuk mamba
+          use-mamba: false
 
       - name: Ensure MLflow CLI available in env
         run: |
-          conda run -n workflowci-env python -m pip install --upgrade pip
-          conda run -n workflowci-env python -m pip install mlflow
+          conda run -n mlflow-env python -m pip install --upgrade pip
+          conda run -n mlflow-env python -m pip install mlflow
         shell: bash
 
       - name: Run MLflow project (MLProject directory)
         id: run_mlflow
         run: |
           # jika MLProject/MLproject ada, ini akan menjalankan default entry point
-          conda run -n workflowci-env mlflow run MLProject
+          conda run -n mlflow-env mlflow run MLProject
         shell: bash
 
       - name: Get latest MLflow run_id (inline, writes to GITHUB_OUTPUT)
         id: get_run
         run: |
-          conda run -n workflowci-env python - <<'PY'
+          conda run -n mlflow-env python - <<'PY'
           import os, sys
           from mlflow.tracking import MlflowClient
           tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
@@ -81,7 +89,7 @@ jobs:
           # remove if exists
           rm -rf "$OUT_DIR"
           mkdir -p "$OUT_DIR"
-          conda run -n workflowci-env python - <<PY
+          conda run -n mlflow-env python - <<PY
           import os, sys, shutil
           from mlflow.tracking import MlflowClient
           run_id = os.environ.get("RUN_ID")
