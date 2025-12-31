@@ -8,7 +8,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score
 from sklearn.linear_model import LogisticRegression
 
 # Load dataset
-df = pd.read_csv("/content/dataset_preprocessed (1).csv")
+df = pd.read_csv("content/dataset_preprocessed (1).csv")
 
 X = df.drop("target", axis=1)
 y = df["target"]
