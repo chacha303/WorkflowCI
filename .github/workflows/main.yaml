@@ -10,9 +10,8 @@ jobs:
   mlflow-and-artifact:
     runs-on: ubuntu-latest
     env:
-      # optional: set these in Secrets if you use remote MLflow tracking server
       MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-      MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }} # optional: id or name
+      MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
     steps:
       - name: Set up job
         run: echo "Start CI job for WorkflowCI"
@@ -29,31 +28,27 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           auto-update-conda: true
-          # Cocokkan versi Python dengan conda.yaml yang memakai python=3.8
           python-version: "3.8"
           environment-file: MLProject/conda.yaml
-          # Aktifkan environment sesuai nama di conda.yaml (mlflow-env)
-          activate-environment: mlflow-env
-          # gunakan conda solver untuk debugging; jika mau, ubah ke true untuk mamba
+          activate-environment: workflowci-env
           use-mamba: false
 
       - name: Ensure MLflow CLI available in env
         run: |
-          conda run -n mlflow-env python -m pip install --upgrade pip
-          conda run -n mlflow-env python -m pip install mlflow
+          conda run -n workflowci-env python -m pip install --upgrade pip
+          conda run -n workflowci-env python -m pip install mlflow
         shell: bash
 
       - name: Run MLflow project (MLProject directory)
         id: run_mlflow
         run: |
-          # jika MLProject/MLproject ada, ini akan menjalankan default entry point
-          conda run -n mlflow-env mlflow run MLProject
+          conda run -n workflowci-env mlflow run MLProject
         shell: bash
 
       - name: Get latest MLflow run_id (inline, writes to GITHUB_OUTPUT)
         id: get_run
         run: |
-          conda run -n mlflow-env python - <<'PY'
+          conda run -n workflowci-env python - <<'PY'
           import os, sys
           from mlflow.tracking import MlflowClient
           tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
@@ -68,13 +63,11 @@ jobs:
               print("No runs found for experiment:", exp, file=sys.stderr)
               sys.exit(2)
           run_id = runs[0].info.run_id
-          print("Found run_id:", run_id)
           gh_out = os.environ.get("GITHUB_OUTPUT")
           if gh_out:
               with open(gh_out, "a") as fh:
                   fh.write(f"mlflow_run_id={run_id}\n")
           else:
-              # fallback (shouldn't be needed on Actions)
               print(f"mlflow_run_id={run_id}")
           PY
         shell: bash
@@ -86,15 +79,13 @@ jobs:
           RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
           echo "Downloading artifacts for run_id: $RUN_ID"
           OUT_DIR="out/run_${RUN_ID}"
-          # remove if exists
           rm -rf "$OUT_DIR"
           mkdir -p "$OUT_DIR"
-          conda run -n mlflow-env python - <<PY
-          import os, sys, shutil
+          conda run -n workflowci-env python - <<PY
+          import os
           from mlflow.tracking import MlflowClient
           run_id = os.environ.get("RUN_ID")
           client = MlflowClient()
-          # download all artifacts of the run (pass path "" to get root)
           client.download_artifacts(run_id, "", dst_path=os.environ.get("OUT_DIR"))
           print("Downloaded artifacts to", os.environ.get("OUT_DIR"))
           PY
