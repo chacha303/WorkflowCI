@@ -39,7 +39,8 @@ jobs:
       - name: Run mlflow project
         id: run_mlflow
         run: |
-          mlflow run .  --env-manager=local
+            cd MLProject
+            mlflow run .  --env-manager=local
         shell: bash
 
       - name: Get latest MLflow run_id
@@ -91,11 +92,12 @@ jobs:
           OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
         shell:   bash
 
-      - name: Build Docker Model
-        run: |
-          echo "Building Docker image for MLflow model"
-          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
-          docker build -t mlflow-model: $RUN_ID . 
+        - name: Build Docker Model
+          run: |
+            echo "Building Docker image for MLflow model"
+            RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
+            cd MLProject
+            docker build -t mlflow-model:$RUN_ID .
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
