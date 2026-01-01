@@ -39,7 +39,7 @@ jobs:
       - name:  Run mlflow project
         id: run_mlflow
         run: |
-            mlflow run MLProject --no-conda
+            mlflow run .  --env-manager=local
         shell: bash
 
       - name: Get latest MLflow run_id
