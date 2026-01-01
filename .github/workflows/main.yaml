@@ -1,9 +1,8 @@
 # CI: run MLflow project, collect artifacts of latest run, upload to GitHub Actions artifacts
 on:
   workflow_dispatch:
-  push:
+  push: 
     branches: [ "main" ]
-  workflow_dispatch: 
 
 name: CI - MLflow -> Upload Artifact
 
@@ -15,12 +14,12 @@ jobs:
       MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
     steps:
       - name: Set up job
-        run:  echo "Start CI job for WorkflowCI"
+        run:   echo "Start CI job for WorkflowCI"
 
       - name:  Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12. 7
+      - name: Set up Python 3.12.7
         uses: actions/setup-python@v5
         with:
           python-version: '3.12.7'
@@ -37,11 +36,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install mlflow scikit-learn
 
-     - name: Run mlflow project
-       id: run_mlflow
-       run: |
-             mlflow run .  --env-manager=local
-       shell: bash
+      - name: Run mlflow project
+        id: run_mlflow
+        run: |
+          mlflow run .  --env-manager=local
+        shell: bash
 
       - name: Get latest MLflow run_id
         id: get_run
@@ -68,15 +67,11 @@ jobs:
           else:
               print(f"mlflow_run_id={run_id}")
           PY
-        shell:  bash
-
-      - name: Install Python dependencies
-        run: |
-          pip install mlflow scikit-learn
+        shell:   bash
 
       - name: Upload to Google Drive
         run: |
-          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
+          RUN_ID="${{ steps.get_run.outputs. mlflow_run_id }}"
           echo "Uploading artifacts for run_id: $RUN_ID to Google Drive"
           OUT_DIR="out/run_${RUN_ID}"
           rm -rf "$OUT_DIR"
@@ -92,9 +87,9 @@ jobs:
           # Tambahkan logic upload ke Google Drive di sini jika diperlukan
           # Atau ganti dengan upload ke GitHub/LFS
         env:
-          RUN_ID:  ${{ steps.get_run. outputs.mlflow_run_id }}
+          RUN_ID:   ${{ steps.get_run. outputs.mlflow_run_id }}
           OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
-        shell:  bash
+        shell:   bash
 
       - name: Build Docker Model
         run: |
@@ -108,9 +103,9 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Tag Docker Image
+      - name:  Tag Docker Image
         run: |
-          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
+          RUN_ID="${{ steps.get_run.outputs. mlflow_run_id }}"
           docker tag mlflow-model:$RUN_ID ${{ secrets.DOCKER_USERNAME }}/mlflow-model:$RUN_ID
           docker tag mlflow-model:$RUN_ID ${{ secrets.DOCKER_USERNAME }}/mlflow-model: latest
 
