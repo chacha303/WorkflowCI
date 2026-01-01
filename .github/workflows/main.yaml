@@ -36,10 +36,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install mlflow scikit-learn
 
-     - name:  Run mlflow project
+     - name: Run mlflow project
        id: run_mlflow
        run: |
-             mlflow run ./MLProject  --env-manager=local
+             mlflow run .  --env-manager=local
        shell: bash
 
       - name: Get latest MLflow run_id
