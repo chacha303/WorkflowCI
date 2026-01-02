@@ -2,15 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Copy semua file dari MLProject
-COPY . /app
+# Copy requirements dan install dependencies
+COPY requirements.txt . 
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-RUN pip install --upgrade pip && \
-    pip install mlflow scikit-learn pandas matplotlib
+# Copy semua file project
+COPY . .
 
-# Expose port untuk MLflow model serving
-EXPOSE 5000
-
-# Command untuk menjalankan model
-ENTRYPOINT ["mlflow", "models", "serve", "-m", "artifacts/model", "-h", "0.0.0.0", "-p", "5000"]
+# Command default (bisa disesuaikan)
+CMD ["python", "modelling.py"]
