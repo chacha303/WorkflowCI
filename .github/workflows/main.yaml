@@ -10,11 +10,11 @@ jobs:
   mlflow-and-artifact:  
     runs-on: ubuntu-latest
     env:
-      MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      MLFLOW_TRACKING_URI:  ${{ secrets.MLFLOW_TRACKING_URI }}
       MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
     steps:
       - name: Set up job
-        run:   echo "Start CI job for WorkflowCI"
+        run:  echo "Start CI job for WorkflowCI"
 
       - name:  Checkout repository
         uses: actions/checkout@v4
@@ -25,42 +25,54 @@ jobs:
           python-version: '3.12.7'
 
       - name: Check Env
-        run:  |
+        run: |
           echo "Python version:"
           python --version
           echo "MLFLOW_TRACKING_URI:  ${{ secrets. MLFLOW_TRACKING_URI }}"
-          echo "MLFLOW_EXPERIMENT: ${{ secrets. MLFLOW_EXPERIMENT }}"
+          echo "MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mlflow scikit-learn
+          pip install mlflow scikit-learn pandas matplotlib
 
       - name: Run mlflow project
         id: run_mlflow
         run: |
-            cd MLProject
-            mlflow run .  --env-manager=local
+          cd MLProject
+          mlflow run .  --env-manager=local
         shell: bash
 
-      - name: Get latest MLflow run_id
+      - name:  Get latest MLflow run_id
         id: get_run
         run: |
           python - <<'PY'
           import os, sys
-          from mlflow.tracking import MlflowClient
+          from mlflow. tracking import MlflowClient
+          
           tracking_uri = os.environ. get("MLFLOW_TRACKING_URI")
           client = MlflowClient(tracking_uri=tracking_uri) if tracking_uri else MlflowClient()
-          exp = os.environ. get("MLFLOW_EXPERIMENT", "0")
+          
+          # PERBAIKAN: Validasi MLFLOW_EXPERIMENT
+          exp = os.environ.get("MLFLOW_EXPERIMENT", "0").strip()
+          if not exp or exp == "": 
+              exp = "0"
+              print("Warning: MLFLOW_EXPERIMENT empty, using default '0'", file=sys.stderr)
+          
+          # Pastikan exp adalah string atau integer yang valid
           try:
-              runs = client.search_runs([exp], order_by=["attributes.start_time DESC"], max_results=1)
-          except Exception as e: 
-              print("Error searching runs:", e, file=sys.stderr)
+              runs = client.search_runs([exp], order_by=["attributes. start_time DESC"], max_results=1)
+          except Exception as e:  
+              print(f"Error searching runs with experiment '{exp}': {e}", file=sys.stderr)
               sys.exit(1)
+          
           if not runs:
-              print("No runs found for experiment:", exp, file=sys.stderr)
+              print(f"No runs found for experiment:  {exp}", file=sys.stderr)
               sys.exit(2)
+          
           run_id = runs[0].info.run_id
+          print(f"Found MLflow run_id: {run_id}")
+          
           gh_out = os.environ.get("GITHUB_OUTPUT")
           if gh_out: 
               with open(gh_out, "a") as fh:
@@ -68,57 +80,74 @@ jobs:
           else:
               print(f"mlflow_run_id={run_id}")
           PY
-        shell:   bash
+        shell:  bash
 
-      - name: Upload to Google Drive
+      - name: Install Python dependencies
         run: |
-          RUN_ID="${{ steps.get_run.outputs. mlflow_run_id }}"
-          echo "Uploading artifacts for run_id:  $RUN_ID to Google Drive"
+          python -m pip install --upgrade pip
+          pip install mlflow
+
+      - name: Upload to Artifact
+        run: |
+          RUN_ID="${{ steps. get_run.outputs.mlflow_run_id }}"
+          echo "Downloading artifacts for run_id: $RUN_ID"
           OUT_DIR="out/run_${RUN_ID}"
           rm -rf "$OUT_DIR"
           mkdir -p "$OUT_DIR"
+          
           python - <<PY
           import os
           from mlflow. tracking import MlflowClient
+          
           run_id = os.environ.get("RUN_ID")
+          out_dir = os.environ.get("OUT_DIR")
+          
           client = MlflowClient()
-          client.download_artifacts(run_id, "", dst_path=os.environ.get("OUT_DIR"))
-          print("Downloaded artifacts to", os.environ.get("OUT_DIR"))
+          client.download_artifacts(run_id, "", dst_path=out_dir)
+          print(f"Downloaded artifacts to {out_dir}")
           PY
-          # Tambahkan logic upload ke Google Drive di sini jika diperlukan
-          # Atau ganti dengan upload ke GitHub/LFS
+          
+          echo "Artifacts prepared for upload"
         env: 
-          RUN_ID:   ${{ steps.get_run. outputs.mlflow_run_id }}
+          RUN_ID:  ${{ steps.get_run. outputs.mlflow_run_id }}
           OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
-        shell:   bash
+        shell:  bash
+
+      # ✅ UPLOAD KE GITHUB ACTIONS ARTIFACTS (Ganti Google Drive)
+      - name: Upload Artifacts to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-artifacts-${{ steps.get_run.outputs.mlflow_run_id }}
+          path: out/run_${{ steps.get_run.outputs. mlflow_run_id }}
+          retention-days: 30
 
       - name: Build Docker Model
         run: |
           echo "Building Docker image for MLflow model"
-          RUN_ID="${{ steps.get_run.outputs. mlflow_run_id }}"
+          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
           cd MLProject
-          docker build -t mlflow-model: $RUN_ID .
+          docker build -t mlflow-model: $RUN_ID . 
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with: 
-          username: ${{ secrets. DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets. DOCKER_PASSWORD }}
 
-      - name:  Tag Docker Image
-        run: |
-          RUN_ID="${{ steps.get_run.outputs.  mlflow_run_id }}"
+      - name: Tag Docker Image
+        run:  |
+          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
           docker tag mlflow-model:$RUN_ID ${{ secrets.DOCKER_USERNAME }}/mlflow-model:$RUN_ID
           docker tag mlflow-model:$RUN_ID ${{ secrets.DOCKER_USERNAME }}/mlflow-model: latest
 
       - name: Push Docker Image
         run: |
           RUN_ID="${{ steps. get_run.outputs.mlflow_run_id }}"
-          docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model: $RUN_ID
-          docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model: latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:$RUN_ID
+          docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:latest
 
       - name: Post Log in to Docker Hub
-        if:  always()
+        if: always()
         run: echo "Docker Hub logout or cleanup"
 
       - name: Post Set up Python 3.12.7
