@@ -9,9 +9,6 @@ name: CI - MLflow -> Upload Artifact
 jobs: 
   mlflow-and-artifact:  
     runs-on: ubuntu-latest
-    env:
-      MLFLOW_TRACKING_URI:  ${{ secrets.MLFLOW_TRACKING_URI }}
-      MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
     steps:
       - name: Set up job
         run:  echo "Start CI job for WorkflowCI"
@@ -28,8 +25,6 @@ jobs:
         run: |
           echo "Python version:"
           python --version
-          echo "MLFLOW_TRACKING_URI:  ${{ secrets. MLFLOW_TRACKING_URI }}"
-          echo "MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}"
 
       - name: Install dependencies
         run: |
@@ -38,63 +33,53 @@ jobs:
 
       - name: Run mlflow project
         id: run_mlflow
-        env:
-          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-          MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
-        run:  |
+        run: |
           cd MLProject
-          mlflow run .  --env-manager=local
+          # Set tracking URI lokal eksplisit
+          export MLFLOW_TRACKING_URI=file://$(pwd)/mlruns
+          echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          mlflow run . --env-manager=local
         shell: bash
       
       - name: Get latest MLflow run_id
         id: get_run
         run: |
+          # Gunakan tracking URI lokal yang sama
+          export MLFLOW_TRACKING_URI=file://$(pwd)/MLProject/mlruns
           python - <<'PY'
           import os, sys
-          from mlflow. tracking import MlflowClient
+          from mlflow.tracking import MlflowClient
           
-          tracking_uri = os.environ. get("MLFLOW_TRACKING_URI")
-          client = MlflowClient(tracking_uri=tracking_uri) if tracking_uri else MlflowClient()
+          tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+          print(f"Using tracking URI: {tracking_uri}", file=sys.stderr)
+          client = MlflowClient(tracking_uri=tracking_uri)
           
-          exp = os.environ.get("MLFLOW_EXPERIMENT", "").strip()
+          # Cari semua runs di semua experiments
+          all_experiments = client.search_experiments()
+          runs = []
+          for experiment in all_experiments:
+              exp_runs = client.search_runs(
+                  [experiment.experiment_id], 
+                  order_by=["attributes.start_time DESC"], 
+                  max_results=1
+              )
+              if exp_runs:
+                  runs.extend(exp_runs)
           
-          # Jika experiment tidak diset, cari semua runs di semua experiment
-          if not exp: 
-              print("Warning: MLFLOW_EXPERIMENT not set, searching all experiments", file=sys.stderr)
-              # Cari di semua experiments
-              all_experiments = client.search_experiments()
-              runs = []
-              for experiment in all_experiments:
-                  exp_runs = client.search_runs([experiment.experiment_id], order_by=["attributes.start_time DESC"], max_results=1)
-                  if exp_runs:
-                      runs. extend(exp_runs)
+          if runs:
+              runs.sort(key=lambda r: r.info.start_time, reverse=True)
+              run_id = runs[0].info.run_id
+              print(f"Found MLflow run_id: {run_id}")
               
-              # Sort semua runs berdasarkan start_time
-              if runs:
-                  runs.sort(key=lambda r: r.info.start_time, reverse=True)
-                  runs = [runs[0]]  # Ambil yang terbaru
+              gh_out = os.environ.get("GITHUB_OUTPUT")
+              if gh_out:
+                  with open(gh_out, "a") as fh:
+                      fh.write(f"mlflow_run_id={run_id}\n")
           else:
-              try:
-                  runs = client.search_runs([exp], order_by=["attributes.start_time DESC"], max_results=1)
-              except Exception as e:
-                  print(f"Error searching runs with experiment '{exp}': {e}", file=sys.stderr)
-                  sys.exit(1)
-          
-          if not runs:
-              print("No runs found in any experiment", file=sys.stderr)
+              print("No runs found", file=sys.stderr)
               sys.exit(2)
-          
-          run_id = runs[0].info.run_id
-          print(f"Found MLflow run_id: {run_id}")
-          
-          gh_out = os.environ.get("GITHUB_OUTPUT")
-          if gh_out:
-              with open(gh_out, "a") as fh:
-                  fh.write(f"mlflow_run_id={run_id}\n")
-          else:
-              print(f"mlflow_run_id={run_id}")
           PY
-        shell:  bash
+        shell: bash
   
       - name: Install Python dependencies
         run: |
@@ -103,7 +88,8 @@ jobs:
 
       - name: Upload to Artifact
         run: |
-          RUN_ID="${{ steps. get_run.outputs.mlflow_run_id }}"
+          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
+          export MLFLOW_TRACKING_URI=file://$(pwd)/MLProject/mlruns
           echo "Downloading artifacts for run_id: $RUN_ID"
           OUT_DIR="out/run_${RUN_ID}"
           rm -rf "$OUT_DIR"
@@ -111,21 +97,22 @@ jobs:
           
           python - <<PY
           import os
-          from mlflow. tracking import MlflowClient
+          from mlflow.tracking import MlflowClient
           
           run_id = os.environ.get("RUN_ID")
           out_dir = os.environ.get("OUT_DIR")
+          tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
           
-          client = MlflowClient()
+          client = MlflowClient(tracking_uri=tracking_uri)
           client.download_artifacts(run_id, "", dst_path=out_dir)
           print(f"Downloaded artifacts to {out_dir}")
           PY
           
           echo "Artifacts prepared for upload"
-        env: 
-          RUN_ID:  ${{ steps.get_run. outputs.mlflow_run_id }}
+        env:
+          RUN_ID: ${{ steps.get_run.outputs.mlflow_run_id }}
           OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
-        shell:  bash
+        shell: bash
 
       # ✅ UPLOAD KE GITHUB ACTIONS ARTIFACTS (Ganti Google Drive)
       - name: Upload Artifacts to GitHub
