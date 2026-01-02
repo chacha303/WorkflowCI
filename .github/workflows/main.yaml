@@ -61,7 +61,7 @@ jobs:
           
           # Pastikan exp adalah string atau integer yang valid
           try:
-              runs = client.search_runs([exp], order_by=["attributes. start_time DESC"], max_results=1)
+              runs = client.search_runs([exp], order_by=["attributes.start_time DESC"], max_results=1)
           except Exception as e:  
               print(f"Error searching runs with experiment '{exp}': {e}", file=sys.stderr)
               sys.exit(1)
