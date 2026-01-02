@@ -38,7 +38,10 @@ jobs:
 
       - name: Run mlflow project
         id: run_mlflow
-        run: |
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_EXPERIMENT: ${{ secrets.MLFLOW_EXPERIMENT }}
+        run:  |
           cd MLProject
           mlflow run .  --env-manager=local
         shell: bash
