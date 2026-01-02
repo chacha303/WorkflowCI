@@ -55,7 +55,7 @@ jobs:
           for experiment in all_experiments: 
               exp_runs = client.search_runs(
                   [experiment.experiment_id], 
-                  order_by=["attributes. start_time DESC"], 
+                  order_by=["attributes.start_time DESC"], 
                   max_results=1
               )
               if exp_runs: 
