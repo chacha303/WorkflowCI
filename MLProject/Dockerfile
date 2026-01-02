@@ -2,11 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY .  .
+# Copy all files from MLProject directory
+COPY . /app
 
-RUN pip install --upgrade pip && \
-    pip install mlflow scikit-learn pandas matplotlib
+# Install dependencies
+RUN pip install --no-cache-dir mlflow scikit-learn pandas matplotlib
 
+# Expose port for MLflow model serving (optional)
 EXPOSE 5000
 
-CMD ["mlflow", "models", "serve", "-m", "artifacts/model", "-h", "0.0.0.0", "-p", "5000"]
+# Default command - you can override this
+CMD ["python", "modelling.py"]
