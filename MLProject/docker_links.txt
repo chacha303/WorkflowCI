@@ -1,4 +1,0 @@
-https://hub.docker.com/
-# Contoh image:
-# https://hub.docker.com/r/chacha303/my-image
-# https://hub.docker.com/r/tensorflow/tensorflow
