@@ -34,17 +34,17 @@ jobs:
       - name: Run mlflow project
         id: run_mlflow
         run: |
-          cd MLProject
-          # Set tracking URI lokal eksplisit
-          export MLFLOW_TRACKING_URI=file://$(pwd)/mlruns
+          # Set local tracking URI explicitly
+          export MLFLOW_TRACKING_URI=file://$(pwd)/MLProject/mlruns
           echo "Using MLflow tracking URI: $MLFLOW_TRACKING_URI"
+          cd MLProject
           mlflow run . --env-manager=local
         shell: bash
       
       - name: Get latest MLflow run_id
         id: get_run
         run: |
-          # Gunakan tracking URI lokal yang sama
+          # Use the same local tracking URI
           export MLFLOW_TRACKING_URI=file://$(pwd)/MLProject/mlruns
           python - <<'PY'
           import os, sys
@@ -54,7 +54,7 @@ jobs:
           print(f"Using tracking URI: {tracking_uri}", file=sys.stderr)
           client = MlflowClient(tracking_uri=tracking_uri)
           
-          # Cari semua runs di semua experiments
+          # Search all runs in all experiments
           all_experiments = client.search_experiments()
           runs = []
           for experiment in all_experiments:
