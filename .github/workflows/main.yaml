@@ -114,12 +114,12 @@ jobs:
           OUT_DIR: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
         shell: bash
 
-      # ✅ UPLOAD KE GITHUB ACTIONS ARTIFACTS (Ganti Google Drive)
+      # ✅ Upload to GitHub Actions Artifacts (replacing Google Drive)
       - name: Upload Artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
           name: mlflow-artifacts-${{ steps.get_run.outputs.mlflow_run_id }}
-          path: out/run_${{ steps.get_run.outputs. mlflow_run_id }}
+          path: out/run_${{ steps.get_run.outputs.mlflow_run_id }}
           retention-days: 30
 
       - name: Build Docker Model
@@ -133,7 +133,7 @@ jobs:
         uses: docker/login-action@v3
         with: 
           username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets. DOCKER_PASSWORD }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Tag Docker Image
         run:  |
@@ -143,7 +143,7 @@ jobs:
 
       - name: Push Docker Image
         run: |
-          RUN_ID="${{ steps. get_run.outputs.mlflow_run_id }}"
+          RUN_ID="${{ steps.get_run.outputs.mlflow_run_id }}"
           docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:$RUN_ID
           docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:latest
 
